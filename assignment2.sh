@@ -1,21 +1,13 @@
 #!/bin/bash
-
-# Function to display messages with formatting
-print_message() {
-    echo "**********************"
-    echo "$1"
-    echo "**********************"
-}
-
 # Function to configure the network
-configure_network() {
+netplan_change() {
     echo "Configuring the network..."
     cat <<EOF | sudo tee /etc/netplan/50-cloud-init.yaml > /dev/null
 network:
   version: 2
   renderer: networkd
   ethernets:
-    eth1:
+    eth0:
       dhcp4: no
       addresses: [192.168.16.22/24]
       routes:
@@ -30,10 +22,10 @@ EOF
 }
 
 # Call the function to configure the network
-configure_network
+netplan_change
 
 # Function to update the /etc/hosts file
-update_hosts() {
+hosts_file() {
     print_message "Updating /etc/hosts File"
     local new_entry="192.168.16.21    server1"
 
@@ -45,65 +37,45 @@ sudo grep -v '^192\.168\.16\.21[[:space:]]\+server1$' /etc/hosts | sudo tee /etc
 }
 
 # Update /etc/hosts file
-update_hosts
+hosts_file
 
-# Function to display messages with formatting
-print_message() {
-    echo "**********************"
-    echo "$1"
-    echo "**********************"
+# Function to check and install required software
+install_software() {
+    print_message "Checking and Installing Required Software"
+
+    # Check and install Apache2 if not installed
+    if ! dpkg -l | grep -q 'apache2'; then
+        sudo apt update
+        sudo apt install -y apache2
+        print_message "Apache2 installed."
+    else
+        print_message "Apache2 is already installed."
+    fi
+
+    # Check and install Squid if not installed
+    if ! dpkg -l | grep -q 'squid'; then
+        sudo apt update
+        sudo apt install -y squid
+        print_message "Squid installed."
+    else
+        print_message "Squid is already installed."
+    fi
 }
 
-# Function to install Apache2
-install_apache() {
-    print_message "Installing Apache2"
-    sudo apt update
-    sudo apt install -y apache2
-}
-
-# Function to install Squid
-install_squid() {
-    print_message "Installing Squid"
-    sudo apt update
-    sudo apt install -y squid
-}
-
-# Function to start and enable Apache2 service
-start_apache() {
-    print_message "Starting and Enabling Apache2 Service"
-    sudo systemctl start apache2
-    sudo systemctl enable apache2
-}
-
-# Function to start and enable Squid service
-start_squid() {
-    print_message "Starting and Enabling Squid Service"
-    sudo systemctl start squid
-    sudo systemctl enable squid
-}
-
-
-# Install Apache2
-install_apache
-
-# Start and enable Apache2 service
-start_apache
-
-# Install Squid
-install_squid
-
-# Start and enable Squid service
-start_squid
+# Call the function to check and install required software
+install_software
 
 # Function to enable UFW and configure firewall rules
 configure_firewall() {
+    local mgmt_network_ip="<your_mgmt_network_ip>"  # Specify the management network IP here
+
     print_message "Configuring Firewall with UFW"
-    
+
     # Enable UFW
-    sudo ufw enable
+    sudo ufw --force enable
 
     # Allow SSH on port 22 only on the management network
-    sudo ufw allow from <mgmt_network_ip> to any port 22
+    sudo ufw allow from "$mgmt_network_ip" to any port 22
 
     # Allow HTTP on both interfaces
     sudo ufw allow http
@@ -115,18 +87,9 @@ configure_firewall() {
     sudo ufw reload
 }
 
-
-# Configure firewall rules using UFW
+# Call the function to configure firewall rules using UFW
 configure_firewall
 
-# Function to display messages with formatting
-print_message() {
-    echo "**********************"
-    echo "$1"
-    echo "**********************"
-}
-
-# Function to create user accounts with specified configuration
 create_users() {
     print_message "Creating User Accounts"
 
@@ -135,31 +98,36 @@ create_users() {
 
     # Create users with home directory and bash shell
     for user in "${users[@]}"; do
-        sudo useradd -m -s /bin/bash "$user"
-        echo "User '$user' created."
+        if ! id "$user" &>/dev/null; then
+            sudo useradd -m -s /bin/bash "$user"
+            echo "User '$user' created."
 
-        # Generate RSA and Ed25519 keys for the user
-        sudo -u "$user" ssh-keygen -t rsa -N "" -f "/home/$user/.ssh/id_rsa"
-        sudo -u "$user" ssh-keygen -t ed25519 -N "" -f "/home/$user/.ssh/id_ed25519"
+            # Generate RSA and Ed25519 keys for the user
+            sudo -u "$user" ssh-keygen -t rsa -N "" -f "/home/$user/.ssh/id_rsa"
+            sudo -u "$user" ssh-keygen -t ed25519 -N "" -f "/home/$user/.ssh/id_ed25519"
 
-        # Append RSA and Ed25519 public keys to authorized_keys file
-        cat "/home/$user/.ssh/id_rsa.pub" | sudo -u "$user" tee -a "/home/$user/.ssh/authorized_keys" >/dev/null
-        cat "/home/$user/.ssh/id_ed25519.pub" | sudo -u "$user" tee -a "/home/$user/.ssh/authorized_keys" >/dev/null
+            # Append RSA and Ed25519 public keys to authorized_keys file
+            cat "/home/$user/.ssh/id_rsa.pub" | sudo -u "$user" tee -a "/home/$user/.ssh/authorized_keys" >/dev/null
+            cat "/home/$user/.ssh/id_ed25519.pub" | sudo -u "$user" tee -a "/home/$user/.ssh/authorized_keys" >/dev/null
 
-        echo "SSH keys generated and added for user '$user'."
+            echo "SSH keys generated and added for user '$user'."
+        else
+            echo "User '$user' already exists."
+        fi
     done
 }
 
-# Function to grant sudo access to dennis
+# Function to grant sudo access to specified user
 grant_sudo_access() {
-    print_message "Granting Sudo Access to Dennis"
-    sudo usermod -aG sudo dennis
-    echo "Sudo access granted to user 'dennis'."
+    local sudo_user="dennis"
+
+    print_message "Granting Sudo Access to $sudo_user"
+    sudo usermod -aG sudo "$sudo_user"
+    echo "Sudo access granted to user '$sudo_user'."
 }
 
-
-# Create user accounts
+# Call the function to create user accounts
 create_users
 
-# Grant sudo access to dennis
+# Call the function to grant sudo access
 grant_sudo_access
